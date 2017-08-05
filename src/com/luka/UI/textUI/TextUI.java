@@ -120,7 +120,7 @@ public class TextUI extends AbstractUI {
         params.setFoodSourcesNumber(100);
         params.setFoodSourceTrialsLimit(20);
         params.setOnlookersNumber(30);
-        params.setStopCriterion(new IterationStopCriterion(1000));
+        params.setMaxIterations(1000);
         params.setSelectionStrategy(new RouletteWheelSelectionStrategyImpl(new Random()));
 
         userAction=EUserAction.START_ALGORITHM;

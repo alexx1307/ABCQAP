@@ -1,6 +1,8 @@
 package com.luka.algorithm;
 
 import com.luka.algorithm.selection.ISelectionStrategy;
+import com.luka.algorithm.selection.RouletteWheelSelectionStrategyImpl;
+import com.luka.algorithm.selection.SelectionStrategyFactory;
 import com.luka.qap.Solution;
 
 import java.util.*;
@@ -11,6 +13,8 @@ import java.util.*;
 public class SequentionalAbcAlgorithm extends ABCAlgorithm {
 
     protected List<FoodSource> foodSources;
+    private Random random = new Random(1);
+
     public SequentionalAbcAlgorithm(ABCAlgorithmParameters parameters) {
         super(parameters);
     }
@@ -55,7 +59,6 @@ public class SequentionalAbcAlgorithm extends ABCAlgorithm {
 
     private Solution searchInNeighbourhood(Solution oldSolution) {
         Solution solution = new Solution((ArrayList)oldSolution.getFacilitiesMapping().clone(), oldSolution.getProblem());
-        Random random = new Random();
         int i = random.nextInt(oldSolution.getProblem().getProblemSize());
         int j;
         do {
@@ -101,6 +104,11 @@ public class SequentionalAbcAlgorithm extends ABCAlgorithm {
 
     @Override
     public void init(long seed) {
+
+    }
+
+    @Override
+    public void releaseMemory() {
 
     }
 

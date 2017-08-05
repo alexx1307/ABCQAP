@@ -3,10 +3,10 @@ package com.luka.algorithm.parallel;
 import com.jogamp.opencl.CLBuffer;
 import com.jogamp.opencl.CLMemory;
 import com.jogamp.opencl.CLSubBuffer;
-import com.luka.algorithm.ABCAlgorithm;
 import com.luka.algorithm.ABCAlgorithmParameters;
 import com.luka.algorithm.FoodSource;
-import com.luka.algorithm.selection.ISelectionStrategy;
+import com.luka.qap.IAlgorithm;
+import com.luka.qap.ProblemInstance;
 import com.luka.qap.Solution;
 import com.luka.qap.TimeStatistics;
 
@@ -19,61 +19,99 @@ import java.util.stream.IntStream;
 /**
  * Created by lukas on 25.03.2017.
  */
-public class ParallelAbcAlgorithm extends ABCAlgorithm {
-    protected List<FoodSource> foodSources;
+public class
 
+ParallelAbcAlgorithm implements IAlgorithm {
+    private ProblemInstance problemInstance;
+    private ABCAlgorithmParameters parameters;
     private ParallelComputingInstance parallelComputingInstance;
     private Random random;
     private CLBuffer<IntBuffer> weightsBuffer;
     private CLBuffer<IntBuffer> distancesBuffer;
     private CLBuffer<IntBuffer> foodSourcesBuffer;
-    private CLBuffer<IntBuffer> fitnessArrayBuffer;
+    private CLBuffer<IntBuffer> costFunctionValuesBuffer;
     private CLBuffer<IntBuffer> triesBuffer;
 
     private Solution bestSolution;
+    private Instant algorithmSetup, beforeCriterionCheck, beforeEmployeePhase, beforeOnlookerPhase, beforeScoutPhase, beforeUpdatingPhase, afterUpdatingState;
+    private TimeStatistics statistics;
+    private  boolean debugModeEnabled = true;
 
+    private final String programName = "qap_abc.cl";
 
     public ParallelAbcAlgorithm(ABCAlgorithmParameters parameters) {
-        super(parameters);
+        this.parameters = parameters;
     }
 
     @Override
     public Solution run() {
         algorithmSetup = Instant.now();
-        System.out.println("Initializing food sources");
+        debug("Initializing food sources");
         initFoodSources();
         beforeCriterionCheck = Instant.now();
         statistics.updateInitStatistics(algorithmSetup, beforeCriterionCheck);
-        for (int i = 0; i < 1; i++) {
+        for (int i = 0; i < parameters.getMaxIterations(); i++) {
             beforeEmployeePhase = Instant.now();
-            System.out.println("fitness from gpu = " + Arrays.toString(parallelComputingInstance.readBufferToArray(fitnessArrayBuffer)));
-
-            System.out.println("employedBeesPhase");
-
+            if(debugModeEnabled) {
+                System.out.println("fitness from gpu = " + Arrays.toString(parallelComputingInstance.readBufferToArray(costFunctionValuesBuffer)));
+                System.out.println("employedBeesPhase");
+            }
             employedBeesPhase();
-            System.out.println("fitness from gpu = " + Arrays.toString(parallelComputingInstance.readBufferToArray(fitnessArrayBuffer)));
-            System.out.println("food sources = " + Arrays.toString(parallelComputingInstance.readBufferToArray(foodSourcesBuffer)));
-
+            if(debugModeEnabled) {
+                System.out.println("fitness from gpu = " + Arrays.toString(parallelComputingInstance.readBufferToArray(costFunctionValuesBuffer)));
+                System.out.println("food sources = " + Arrays.toString(parallelComputingInstance.readBufferToArray(foodSourcesBuffer)));
+            }
             beforeOnlookerPhase = Instant.now();
-/*            System.out.println("onlookerBeesPhase");
-            onlookerBeesPhase();*/
+            debug("onlookerBeesPhase");
+            //onlookerBeesPhase();
+            onlookerBeePhase();
+            debug("beforeUpdateBest");
             beforeScoutPhase = Instant.now();
             updateBest();
+            debug("beforeScoutPhase");
             scoutBeesPhase();
-            beforeUpdatingPhase = Instant.now();/*
+            beforeUpdatingPhase = Instant.now();
+            debug("afterScoutPhase");
+
+            if(debugModeEnabled) {
+                String costFunctionValuesAsString = Arrays.toString(parallelComputingInstance.readBufferToArray(costFunctionValuesBuffer));
+                System.out.println("employedBeesPhase");
+                System.out.println("fitness from gpu = " + costFunctionValuesAsString);
+            }
+            /*
             updateAlgorithmState();
             afterUpdatingState = Instant.now();
             statistics.updateEveryTurnStatistics(beforeCriterionCheck, beforeEmployeePhase, beforeOnlookerPhase, beforeScoutPhase, beforeUpdatingPhase, afterUpdatingState);
             beforeCriterionCheck = afterUpdatingState;*/
         }
-        return updateBest();
+        Solution result = updateBest();
+
+        releaseMemory();
+        return result;
         //return algorithmState.getBestResultFound();
+    }
+
+    @Override
+    public void releaseMemory() {
+        costFunctionValuesBuffer.release();
+        distancesBuffer.release();
+        foodSourcesBuffer.release();
+        triesBuffer.release();
+        weightsBuffer.release();
+
+    }
+
+    private void debug(String s) {
+        if(debugModeEnabled){
+            System.out.println(s);
+        }
+
     }
 
 
     /*private Solution evaluateBest() {
         int[] foodSources = parallelComputingInstance.readBufferToArray(foodSourcesBuffer);
-        int[] fitnesses = parallelComputingInstance.readBufferToArray(fitnessArrayBuffer);
+        int[] fitnesses = parallelComputingInstance.readBufferToArray(costFunctionValuesBuffer);
         int best = Integer.MAX_VALUE;
         int iBest = -1;
         for (int i =0; i< fitnesses.length; i++) {
@@ -96,17 +134,18 @@ public class ParallelAbcAlgorithm extends ABCAlgorithm {
 
     @Override
     public void init(long seed) {
-        parallelComputingInstance = new ParallelComputingInstance();
+        parallelComputingInstance = new ParallelComputingInstance(programName);
         parallelComputingInstance.init();
         random = new Random(seed);
         initBuffers();
+        statistics= new TimeStatistics(5);
     }
 
     private void initBuffers() {
         weightsBuffer = parallelComputingInstance.createBufferFrom2DArray(problemInstance.getWeights(), CLMemory.Mem.READ_ONLY);
         distancesBuffer = parallelComputingInstance.createBufferFrom2DArray(problemInstance.getDistances(), CLMemory.Mem.READ_ONLY);
         foodSourcesBuffer = parallelComputingInstance.createIntBuffer(parameters.getFoodSourcesNumber() * problemInstance.getProblemSize(), CLMemory.Mem.READ_WRITE);
-        fitnessArrayBuffer = parallelComputingInstance.createIntBuffer(parameters.getFoodSourcesNumber(), CLMemory.Mem.READ_WRITE);
+        costFunctionValuesBuffer = parallelComputingInstance.createIntBuffer(parameters.getFoodSourcesNumber(), CLMemory.Mem.READ_WRITE);
 
         int[] triesArray = new int[parameters.getFoodSourcesNumber()];
         for (int i = 0; i < triesArray.length; i++) {
@@ -120,23 +159,21 @@ public class ParallelAbcAlgorithm extends ABCAlgorithm {
     }
 
 
-    @Override
-    protected void initFoodSources() {
+    private void initFoodSources() {
         int foodSourcesNumber = parameters.getFoodSourcesNumber();
 
         parallelComputingInstance.runDurstenfeldAlgorithmKernel(foodSourcesBuffer, foodSourcesNumber, problemInstance.getProblemSize(), 555);
         //parallelComputingInstance.finish();
-        parallelComputingInstance.evaluateFitness(weightsBuffer, distancesBuffer, foodSourcesBuffer, fitnessArrayBuffer, foodSourcesNumber, problemInstance.getProblemSize(), false);
+        parallelComputingInstance.evaluateCostFunctionValues(weightsBuffer, distancesBuffer, foodSourcesBuffer, costFunctionValuesBuffer, foodSourcesNumber, problemInstance.getProblemSize(), false);
     }
 
-    @Override
-    protected void employedBeesPhase() {
+    private void employedBeesPhase() {
         //yyyy? chyba do usuniecia
 /*        if (foodSourcesBuffer.getBuffer().remaining() == 0) {
             addFoodSourcesIntoBuffer(foodSources, foodSourcesBuffer);
         }*/
-        foodSourcesBuffer = parallelComputingInstance.runEmployeeBeeParallel(weightsBuffer, distancesBuffer, foodSourcesBuffer, fitnessArrayBuffer, triesBuffer, parameters.getFoodSourcesNumber(), problemInstance.getProblemSize(), random.nextInt());
-
+        foodSourcesBuffer = parallelComputingInstance.runEmployeeBeeParallel(weightsBuffer, distancesBuffer, foodSourcesBuffer, costFunctionValuesBuffer, triesBuffer, parameters.getFoodSourcesNumber(), problemInstance.getProblemSize(), random.nextInt());
+        parallelComputingInstance.finish();
         /*for (FoodSource foodSource : foodSources) {
             Solution mutatedSolution = searchInNeighbourhood(foodSource.getSolution());
             if (mutatedSolution.isBetterThan(foodSource.getSolution())) {
@@ -161,20 +198,31 @@ public class ParallelAbcAlgorithm extends ABCAlgorithm {
     }
 
 
-    @Override
-    protected void onlookerBeesPhase() {
-        ISelectionStrategy selectionStrategy = parameters.getSelectionStrategy();
-        List<FoodSource> selectedFoodSources = selectionStrategy.select(foodSources, parameters.getOnlookersNumber());
 
-        for (FoodSource foodSource : selectedFoodSources) {
-            Solution mutatedSolution = searchInNeighbourhood(foodSource.getSolution());
-            if (mutatedSolution.isBetterThan(foodSource.getSolution())) {
-                foodSource.setSolution(mutatedSolution);
-            } /*else {
-                foodSource.incrementTrials();
-            }*/
-        }
+    private void onlookerBeesPhaseWholeOnGPU() {
+        parallelComputingInstance.runOnlookerBeesPhaseWholeOnGPU(weightsBuffer, distancesBuffer, foodSourcesBuffer, costFunctionValuesBuffer, triesBuffer, parameters.getFoodSourcesNumber(), problemInstance.getProblemSize(), parameters.getOnlookersNumber(), random.nextInt());
+
     }
+    private void onlookerBeePhase() {
+        switch (parameters.getOnlookersMethod()){
+            case ELITE_SELECTION:
+                parallelComputingInstance.runOnlookerBeesPhaseWithEliteSelection(weightsBuffer, distancesBuffer, foodSourcesBuffer, costFunctionValuesBuffer, triesBuffer, parameters.getFoodSourcesNumber(), problemInstance.getProblemSize(), parameters.getOnlookersNumber(), random.nextInt());
+
+                break;
+            case ORIGINAL:
+                parallelComputingInstance.runOnlookerBeesPhaseWholeOnGPU(weightsBuffer, distancesBuffer, foodSourcesBuffer, costFunctionValuesBuffer, triesBuffer, parameters.getFoodSourcesNumber(), problemInstance.getProblemSize(), parameters.getOnlookersNumber(), random.nextInt());
+
+                break;
+            case EMPLOYEE_BEE_VERSION:
+                parallelComputingInstance.runEmployeeBeeParallel(weightsBuffer,distancesBuffer,foodSourcesBuffer,costFunctionValuesBuffer,triesBuffer,parameters.getFoodSourcesNumber(),problemInstance.getProblemSize(),random.nextInt());
+                break;
+            case NONE:
+                break;
+        }
+        parallelComputingInstance.finish();
+    }
+
+
 
     private Solution updateBest() {
         int foodSourcesNumber = parameters.getFoodSourcesNumber();
@@ -194,29 +242,32 @@ public class ParallelAbcAlgorithm extends ABCAlgorithm {
 
 
         int[] foodSourcesArr = parallelComputingInstance.readBufferToArray(foodSourcesBuffer);
-        int[] fitnessFromCpu = new int[foodSourcesNumber];
+        int[] costFunctionValuesFromCpu = new int[foodSourcesNumber];
         for (int i = 0; i < foodSourcesNumber; i++) {
             ArrayList<Integer> subArray = new ArrayList<>(IntStream.of(Arrays.copyOfRange(foodSourcesArr, i * problemInstance.getProblemSize(), (i + 1) * problemInstance.getProblemSize())).boxed().collect(Collectors.toList()));
-            fitnessFromCpu[i] = problemInstance.evaluateResult(subArray);
+            costFunctionValuesFromCpu[i] = problemInstance.evaluateResult(subArray);
         }
-        System.out.println("fitness from cpu = " + Arrays.toString(fitnessFromCpu));
+        //System.out.println("cos function from cpu = " + Arrays.toString(costFunctionValuesFromCpu));
 
 
-        CLBuffer<IntBuffer> fitnesses = parallelComputingInstance.createIntBuffer(workGroups, CLMemory.Mem.WRITE_ONLY);
-        CLBuffer<IntBuffer> bestGlobalIndex = parallelComputingInstance.createIntBuffer(workGroups, CLMemory.Mem.WRITE_ONLY);
+        CLBuffer<IntBuffer> bestCostFunctionValuesInGroups = parallelComputingInstance.createIntBuffer(workGroups, CLMemory.Mem.WRITE_ONLY);
+        CLBuffer<IntBuffer> bestCostFunctionValuesGlobalIndexes = parallelComputingInstance.createIntBuffer(workGroups, CLMemory.Mem.WRITE_ONLY);
 
-        parallelComputingInstance.runFindBestReduction(fitnessArrayBuffer, fitnesses, bestGlobalIndex, foodSourcesNumber, workGroupSize, workGroups);
+        parallelComputingInstance.runFindBestReduction(costFunctionValuesBuffer, bestCostFunctionValuesInGroups, bestCostFunctionValuesGlobalIndexes, foodSourcesNumber, workGroupSize, workGroups);
         parallelComputingInstance.finish();
         int[] fitArray = new int[workGroups];
         int[] fitIndexArray = new int[workGroups];
-        fitnesses.getBuffer().get(fitArray);
-        bestGlobalIndex.getBuffer().get(fitIndexArray);
+        bestCostFunctionValuesInGroups.getBuffer().get(fitArray);
+        bestCostFunctionValuesGlobalIndexes.getBuffer().get(fitIndexArray);
         boolean shouldLoadBest = false;
         int bestIndex = -1;
         int bestFit = bestSolution != null ? bestSolution.getEvaluatedResult() : Integer.MAX_VALUE;
         for (int i = 0; i < workGroups; i++) {
-            System.out.println("i = " + i + " fit = " + fitArray[i] + " index = " + fitIndexArray[i]);
+            if(debugModeEnabled){
+                System.out.println("i = " + i + " fit = " + fitArray[i] + " index = " + fitIndexArray[i]);
+            }
             if (fitArray[i] < bestFit) {
+                System.out.println("i = " + i + " fit = " + fitArray[i] + " index = " + fitIndexArray[i]);
                 bestFit = fitArray[i];
                 bestIndex = fitIndexArray[i];
                 shouldLoadBest = true;
@@ -229,7 +280,7 @@ public class ParallelAbcAlgorithm extends ABCAlgorithm {
             bestSolution = new Solution(new ArrayList(IntStream.of(bestSolutionArray).boxed().collect(Collectors.toList())), problemInstance);
             System.out.println("bestSolution = " + bestSolution.toString());
 
-            System.out.println("fitness from gpu = " + Arrays.toString(parallelComputingInstance.readBufferToArray(fitnessArrayBuffer)));
+            System.out.println("fitness from gpu = " + Arrays.toString(parallelComputingInstance.readBufferToArray(costFunctionValuesBuffer)));
 
         }
         return bestSolution;
@@ -257,10 +308,9 @@ public class ParallelAbcAlgorithm extends ABCAlgorithm {
     }
 
 
-    @Override
-    protected void scoutBeesPhase() {
+    private void scoutBeesPhase() {
         parallelComputingInstance.runScoutsPhaseParallel(foodSourcesBuffer, triesBuffer, parameters.getFoodSourceTrialsLimit(), parameters.getFoodSourcesNumber(), problemInstance.getProblemSize(), random.nextInt());
-        parallelComputingInstance.evaluateFitness(weightsBuffer, distancesBuffer, foodSourcesBuffer, fitnessArrayBuffer, parameters.getFoodSourcesNumber(), problemInstance.getProblemSize(), false);
+        parallelComputingInstance.evaluateCostFunctionValues(weightsBuffer, distancesBuffer, foodSourcesBuffer, costFunctionValuesBuffer, parameters.getFoodSourcesNumber(), problemInstance.getProblemSize(), false);
     }
 
 
@@ -279,8 +329,14 @@ public class ParallelAbcAlgorithm extends ABCAlgorithm {
 
     @Override
     public TimeStatistics getStatistics() {
-        return super.getStatistics();
+        return statistics;
     }
+
+    @Override
+    public void setProblem(ProblemInstance problem) {
+        this.problemInstance = problem;
+    }
+
 
     public List<FoodSource> convertBufferIntoFoodSources(CLBuffer<IntBuffer> foodSourcesAsBuffer) {
         IntBuffer buffer = foodSourcesAsBuffer.getBuffer();
@@ -301,16 +357,6 @@ public class ParallelAbcAlgorithm extends ABCAlgorithm {
             foodSources.add(foodSource);
         }
         return foodSources;
-    }
-
-    @Override
-    protected void incrementTrials() {
-        foodSources.stream().forEach(FoodSource::incrementTrials);
-    }
-
-    @Override
-    protected Solution getBestSolution() {
-        return foodSources.stream().max(Comparator.comparing(f -> f.getFitness())).get().getSolution();
     }
 
 

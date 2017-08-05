@@ -89,4 +89,9 @@ public class DummyRandomAlgorithm implements IAlgorithm {
     public void init(long seed) {
 
     }
+
+    @Override
+    public void releaseMemory() {
+
+    }
 }

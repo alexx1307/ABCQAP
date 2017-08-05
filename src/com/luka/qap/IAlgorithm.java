@@ -8,4 +8,6 @@ public interface IAlgorithm {
     TimeStatistics getStatistics();
     void setProblem(ProblemInstance problem);
     void init(long seed);
+
+    void releaseMemory();
 }

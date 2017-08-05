@@ -1,7 +1,6 @@
 package com.luka.algorithm;
 
 import com.luka.algorithm.selection.ISelectionStrategy;
-import com.luka.algorithm.stopCriterion.IStopCriterion;
 
 /**
  * Created by lukas on 12.11.2016.
@@ -11,7 +10,9 @@ public class ABCAlgorithmParameters {
     private int onlookersNumber;
     private ISelectionStrategy selectionStrategy;
     private int foodSourceTrialsLimit;
-    private IStopCriterion stopCriterion;
+    private int maxIterations;
+    private ESelectionMethod onlookerMethod = ESelectionMethod.ELITE_SELECTION;
+    private short useReductionToFindBest = 1;
 
     public int getFoodSourcesNumber() {
         return foodSourcesNumber;
@@ -33,8 +34,8 @@ public class ABCAlgorithmParameters {
         return selectionStrategy;
     }
 
-    public void setSelectionStrategy(ISelectionStrategy selectionStrategy) {
-        this.selectionStrategy = selectionStrategy;
+    public void setSelectionStrategy(ISelectionStrategy selectionStrategyName) {
+        this.selectionStrategy = selectionStrategyName;
     }
 
     public int getFoodSourceTrialsLimit() {
@@ -45,11 +46,27 @@ public class ABCAlgorithmParameters {
         this.foodSourceTrialsLimit = foodSourceTrialsLimit;
     }
 
-    public IStopCriterion getStopCriterion() {
-        return stopCriterion;
+    public int getMaxIterations() {
+        return maxIterations;
     }
 
-    public void setStopCriterion(IStopCriterion stopCriterion) {
-        this.stopCriterion = stopCriterion;
+    public void setMaxIterations(int maxIterations) {
+        this.maxIterations = maxIterations;
+    }
+
+    public ESelectionMethod getOnlookersMethod() {
+        return onlookerMethod;
+    }
+
+    public void setOnlookerMethod(ESelectionMethod onlookerMethod) {
+        this.onlookerMethod = onlookerMethod;
+    }
+
+    public short getUseReductionToFindBest() {
+        return useReductionToFindBest;
+    }
+
+    public void setUseReductionToFindBest(short useReductionToFindBest) {
+        this.useReductionToFindBest = useReductionToFindBest;
     }
 }

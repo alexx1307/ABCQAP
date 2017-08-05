@@ -33,10 +33,7 @@ public abstract class ABCAlgorithm implements IAlgorithm {
         algorithmState.setBestResultFound(null);
         algorithmState.resetIterations();
 
-        int initStatisticsPhases = 1000;
-        if (parameters.getStopCriterion() instanceof IterationStopCriterion) {
-            initStatisticsPhases = ((IterationStopCriterion) parameters.getStopCriterion()).getMaxIterationNumber();
-        }
+        int initStatisticsPhases = parameters.getMaxIterations();
         statistics = new TimeStatistics(initStatisticsPhases);
     }
 
@@ -48,12 +45,12 @@ public abstract class ABCAlgorithm implements IAlgorithm {
         initFoodSources();
         beforeCriterionCheck = Instant.now();
         statistics.updateInitStatistics(algorithmSetup, beforeCriterionCheck);
-        while (!isStopCriterionMet(statistics)) {
+        while (algorithmState.getIteration() < parameters.getMaxIterations()) {
             beforeEmployeePhase = Instant.now();
-            System.out.println("employedBeesPhase");
+            //System.out.println("employedBeesPhase");
             employedBeesPhase();
             beforeOnlookerPhase = Instant.now();
-            System.out.println("onlookerBeesPhase");
+            //System.out.println("onlookerBeesPhase");
             onlookerBeesPhase();
             beforeScoutPhase = Instant.now();
             scoutBeesPhase();
@@ -93,12 +90,6 @@ public abstract class ABCAlgorithm implements IAlgorithm {
     abstract protected Solution getBestSolution();
 
     abstract protected void incrementTrials();
-
-
-    private boolean isStopCriterionMet(TimeStatistics statistics) {
-        return parameters.getStopCriterion().isStopCriterionMet(algorithmState, statistics);
-    }
-
 
     @Override
     public TimeStatistics getStatistics() {

@@ -16,19 +16,27 @@ public class ParallelComputingInstance {
     private static final Logger LOGGER = Logger.getLogger("myLogger");
     private static final String DURSTENFELD_KERNEL_NAME = "durstenfeldAlgorithm";
     private static final String GENERATE_PSUDORANDOM_KERNEL_NAME = "generatePseudorandom";
-    private static final String PROGRAM_PATH = "qap_abc.cl";
+    //private static final String PROGRAM_PATH = "qap_abc2.cl";
     private static final String EMPLOYEE_BEE_PHASE_KERNEL = "employeeBeePhase";
     private static final String SCOUT_BEE_PHASE_KERNEL = "scoutBeePhase";
     private static final String TEST_INCREMENT_KERNEL = "testIncrementkernel";
-    private static final String EVALUATE_FITNESS_KERNEL = "evaluateFitness";
+    private static final String EVALUATE_COST_FUNCTION_VALUE_KERNEL = "evaluateCostFunctionValues";
     private static final String FIND_BEST_REDUCTION_KERNEL = "findBestReduction";
+    private static final String ONLOOKER_BEE_PHASE_WHOLE_ON_GPU_KERNEL = "onlookerBeePhaseOnGPU";
+    private static final String ONLOOKER_BEE_PHASE_WITH_ELITE_SELECTION = "onlookerBeePhaseWithEliteSelection";
+
+
+    private static final String WHOLE_ALGORITHM_KERNEL = "wholeAlgorithmKernel";
 
     private CLContext context;
     private CLCommandQueue queue;
     private CLProgram program;
     private CLDevice device;
+    private String programName;
 
-    public ParallelComputingInstance() {
+    public ParallelComputingInstance(String programName) {
+
+        this.programName = programName;
     }
 
     public void init() {
@@ -88,10 +96,10 @@ public class ParallelComputingInstance {
         localWorkSize/=2;
         int globalWorkSize = roundUp(localWorkSize, permutationsNumber);   // rounded up to the nearest multiple of the localWorkSize
 
-        System.out.println("localWorkSize:"+localWorkSize);
-        System.out.println("globalWorkSize:"+globalWorkSize);
-        System.out.println("localMemSize:"+localMemSize);
-        System.out.println("permutationLength = " + permutationLength);
+        //System.out.println("localWorkSize:"+localWorkSize);
+        //System.out.println("globalWorkSize:"+globalWorkSize);
+        //System.out.println("localMemSize:"+localMemSize);
+        //System.out.println("permutationLength = " + permutationLength);
         CLProgram program = getProgram();
         CLKernel kernel = program.createCLKernel(DURSTENFELD_KERNEL_NAME);
         //CLEventList list = new CLEventList(1);
@@ -126,7 +134,7 @@ public class ParallelComputingInstance {
         return 0;
     }
 
-    public CLBuffer<IntBuffer> runEmployeeBeeParallel(CLBuffer<IntBuffer> weightsBuffer,CLBuffer<IntBuffer> distancesBuffer,CLBuffer<IntBuffer> foodSourcesAsBuffer, CLBuffer<IntBuffer> fitnessBuffer,CLBuffer<IntBuffer> triesBuffer,int foodSourcesNumber, int permutationLength,long seed) {
+    public CLBuffer<IntBuffer> runEmployeeBeeParallel(CLBuffer<IntBuffer> weightsBuffer,CLBuffer<IntBuffer> distancesBuffer,CLBuffer<IntBuffer> foodSourcesAsBuffer, CLBuffer<IntBuffer> costFunctionValuesBuffer,CLBuffer<IntBuffer> triesBuffer,int foodSourcesNumber, int permutationLength,long seed) {
         int localWorkSize = min(device.getMaxWorkGroupSize(), 128);  // Local work size dimensions
         int globalWorkSize = roundUp(localWorkSize, foodSourcesNumber);   // rounded up to the nearest multiple of the localWorkSize
         long localMemSize = device.getLocalMemSize();
@@ -135,7 +143,7 @@ public class ParallelComputingInstance {
         System.out.println("localMemSize:"+localMemSize);*/
         CLProgram program = getProgram();
         CLKernel kernel = program.createCLKernel(EMPLOYEE_BEE_PHASE_KERNEL);
-        kernel.putArgs(weightsBuffer,distancesBuffer,foodSourcesAsBuffer,fitnessBuffer,triesBuffer);
+        kernel.putArgs(weightsBuffer,distancesBuffer,foodSourcesAsBuffer,costFunctionValuesBuffer,triesBuffer);
         kernel.putArg(foodSourcesNumber);
         kernel.putArg(permutationLength);
         kernel.putArg(seed);
@@ -148,7 +156,7 @@ public class ParallelComputingInstance {
     private CLProgram getProgram() {
         if (program == null) {
             try {
-                program = context.createProgram(Main.class.getResourceAsStream(PROGRAM_PATH)).build();
+                program = context.createProgram(Main.class.getResourceAsStream(programName)).build();
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -173,12 +181,12 @@ public class ParallelComputingInstance {
         }
         return buffer;
     }
-    public CLBuffer<IntBuffer> evaluateFitness(CLBuffer<IntBuffer> weights, CLBuffer<IntBuffer> distances, CLBuffer<IntBuffer> facilitiesMapping,CLBuffer<IntBuffer> fitnessArrayOut,int permNumber, int permLength, boolean readBuffer) {
+    public CLBuffer<IntBuffer> evaluateCostFunctionValues(CLBuffer<IntBuffer> weights, CLBuffer<IntBuffer> distances, CLBuffer<IntBuffer> facilitiesMapping, CLBuffer<IntBuffer> fitnessArrayOut, int permNumber, int permLength, boolean readBuffer) {
         int localWorkSize = device.getMaxWorkGroupSize();  // Local work size dimensions
         int globalWorkSize = roundUp(localWorkSize, permNumber);   // rounded up to the nearest multiple of the localWorkSize
 
         CLProgram program = getProgram();
-        CLKernel kernel = program.createCLKernel(EVALUATE_FITNESS_KERNEL);
+        CLKernel kernel = program.createCLKernel(EVALUATE_COST_FUNCTION_VALUE_KERNEL);
         kernel.putArgs(weights,distances,facilitiesMapping,fitnessArrayOut);
         kernel.putArg(permNumber);
         kernel.putArg(permLength);
@@ -225,7 +233,10 @@ public class ParallelComputingInstance {
     }
 
     public int[] readBufferToArray(CLBuffer<IntBuffer> buffer) {
-        queue.putReadBuffer(buffer,true);
+        CLEventList eventList = new CLEventList(1);
+        System.out.println("before read");
+        queue.putReadBuffer(buffer,true, eventList);
+        System.out.println("read status: "+eventList.getEvent(0).getStatus());
         int[] result = new int[buffer.getBuffer().limit()];
         buffer.getBuffer().get(result);
         buffer.getBuffer().rewind();
@@ -246,11 +257,11 @@ public class ParallelComputingInstance {
         localWorkSize/=2;
         int globalWorkSize = roundUp(localWorkSize, foodSourcesNumber);   // rounded up to the nearest multiple of the localWorkSize
 
-        System.out.println("localWorkSize:"+localWorkSize);
+       /* System.out.println("localWorkSize:"+localWorkSize);
         System.out.println("globalWorkSize:"+globalWorkSize);
         System.out.println("localMemSize:"+localMemSize);
         System.out.println("permutationLength = " + permutationLength);
-        CLProgram program = getProgram();
+*/        CLProgram program = getProgram();
         CLKernel kernel = program.createCLKernel(SCOUT_BEE_PHASE_KERNEL);
         //CLEventList list = new CLEventList(1);
         kernel.putArg(foodSourcesBuffer);
@@ -282,11 +293,81 @@ public class ParallelComputingInstance {
         kernel.putNullArg(workGroupSize*4);  //localWorkSize/2 * 4
         queue.put1DRangeKernel(kernel, 0, workGroupSize*workGroups, workGroupSize);//,list);
 
-        queue.putReadBuffer(bestFitnesses,false);
-        queue.putReadBuffer(bestGlobalIndex,false);
+        queue.putReadBuffer(bestFitnesses,true);
+        queue.putReadBuffer(bestGlobalIndex,true);
     }
 
     public CLDevice getDevice() {
         return device;
+    }
+
+    public void runOnlookerBeesPhaseWholeOnGPU(CLBuffer<IntBuffer> weightsBuffer, CLBuffer<IntBuffer> distancesBuffer, CLBuffer<IntBuffer> foodSourcesBuffer, CLBuffer<IntBuffer> costFunctionValuesBuffer, CLBuffer<IntBuffer> triesBuffer, int foodSourcesNumber, int problemSize, int onlookersNumber, long seed) {
+        int localWorkSize = min(device.getMaxWorkGroupSize(), 128);  // Local work size dimensions
+        int globalWorkSize = roundUp(localWorkSize, foodSourcesNumber);   // rounded up to the nearest multiple of the localWorkSize
+        long localMemSize = device.getLocalMemSize();
+        /*System.out.println("localWorkSize:"+localWorkSize);
+        System.out.println("globalWorkSize:"+globalWorkSize);
+        System.out.println("localMemSize:"+localMemSize);*/
+        CLProgram program = getProgram();
+        CLKernel kernel = program.createCLKernel(ONLOOKER_BEE_PHASE_WHOLE_ON_GPU_KERNEL);
+        kernel.putArgs(weightsBuffer,distancesBuffer,foodSourcesBuffer,costFunctionValuesBuffer,triesBuffer);
+        kernel.putArg(foodSourcesNumber);
+        kernel.putArg(problemSize);
+        kernel.putArg(onlookersNumber);
+        kernel.putArg(seed);
+
+        queue.put1DRangeKernel(kernel, 0, globalWorkSize, localWorkSize);
+
+        return;
+    }
+
+    public void runOnlookerBeesPhaseWithEliteSelection(CLBuffer<IntBuffer> weightsBuffer, CLBuffer<IntBuffer> distancesBuffer, CLBuffer<IntBuffer> foodSourcesBuffer, CLBuffer<IntBuffer> costFunctionValuesBuffer, CLBuffer<IntBuffer> triesBuffer, int foodSourcesNumber, int problemSize, int onlookersNumber, long seed) {
+        int localWorkSize = min(device.getMaxWorkGroupSize(), 128);  // Local work size dimensions
+        int globalWorkSize = roundUp(localWorkSize, onlookersNumber);   // rounded up to the nearest multiple of the localWorkSize
+        long localMemSize = device.getLocalMemSize();
+        /*System.out.println("localWorkSize:"+localWorkSize);
+        System.out.println("globalWorkSize:"+globalWorkSize);
+        System.out.println("localMemSize:"+localMemSize);*/
+        CLProgram program = getProgram();
+        CLKernel kernel = program.createCLKernel(ONLOOKER_BEE_PHASE_WITH_ELITE_SELECTION);
+        kernel.putArgs(weightsBuffer,distancesBuffer,foodSourcesBuffer,costFunctionValuesBuffer,triesBuffer);
+        kernel.putArg(foodSourcesNumber);
+        kernel.putArg(problemSize);
+        kernel.putArg(onlookersNumber);
+        kernel.putArg(seed);
+
+        queue.put1DRangeKernel(kernel, 0, globalWorkSize, localWorkSize);
+
+        return;
+    }
+
+    public void runWholeAlgorithmOnGPU(CLBuffer<IntBuffer> weightsBuffer, CLBuffer<IntBuffer> distancesBuffer, int foodSourcesNumber, int onlookersNumber, int problemSize, int maxIterations, int maxTries, long seed, int localWorkSize, CLBuffer<IntBuffer> solutionBuffer, int workGroupsNumber, short useReductionToFindBest, short onlookerMethod) {
+        /*System.out.println("localWorkSize:"+localWorkSize);
+        System.out.println("globalWorkSize:"+globalWorkSize);
+        System.out.println("localMemSize:"+localMemSize);*/
+        CLProgram program = getProgram();
+        CLKernel kernel = program.createCLKernel(WHOLE_ALGORITHM_KERNEL);
+        kernel.putArgs(weightsBuffer,distancesBuffer);
+        kernel.putArg(onlookersNumber);
+        kernel.putArg(problemSize);
+        kernel.putArg(maxIterations);
+        kernel.putArg(maxTries);
+        kernel.putArg(seed);
+        kernel.putArg(solutionBuffer);
+        kernel.putNullArg(localWorkSize * problemSize * 4); //foodSources
+        kernel.putNullArg(localWorkSize * 4); //cost function values
+        kernel.putNullArg(localWorkSize * 4); //tries
+        kernel.putNullArg(localWorkSize * 4); //localTab
+        kernel.putArg(useReductionToFindBest);
+        kernel.putArg(onlookerMethod);
+        queue.put1DRangeKernel(kernel, 0, localWorkSize * workGroupsNumber, localWorkSize);
+        ;
+    }
+
+
+    public void release() {
+        queue.release();
+        context.release();
+        program.release();
     }
 }

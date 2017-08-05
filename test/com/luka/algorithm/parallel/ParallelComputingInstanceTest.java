@@ -17,9 +17,12 @@ import java.util.Scanner;
  * Created by lukas on 29.04.2017.
  */
 public class ParallelComputingInstanceTest {
+
+    private String programName = "qap_abc.cl";
+
     @Test
     public void getNPseudoRandomInts() throws Exception {
-        ParallelComputingInstance instance = new ParallelComputingInstance();
+        ParallelComputingInstance instance = new ParallelComputingInstance(programName);
         instance.init();
 
         CLBuffer<IntBuffer> pseudorandomIntsBuffer = instance.getNPseudoRandomInts(10, 9876541L);
@@ -32,7 +35,7 @@ public class ParallelComputingInstanceTest {
 
     @Test
     public void testDurstenfeldAlgorithm() throws Exception {
-        ParallelComputingInstance instance = new ParallelComputingInstance();
+        ParallelComputingInstance instance = new ParallelComputingInstance(programName);
         instance.init();
 
         int permLength = 50;
@@ -59,7 +62,7 @@ public class ParallelComputingInstanceTest {
 
     @Test
     public void testInitAndEmployedBeesPhase() throws Exception {
-        ParallelComputingInstance instance = new ParallelComputingInstance();
+        ParallelComputingInstance instance = new ParallelComputingInstance(programName);
         instance.init();
 
         int permLength = 5;
@@ -188,7 +191,7 @@ public class ParallelComputingInstanceTest {
     @Test
     public void testIncerementKernel() throws Exception {
 
-        ParallelComputingInstance instance = new ParallelComputingInstance();
+        ParallelComputingInstance instance = new ParallelComputingInstance(programName);
         instance.init();
         int permNumber = 900;
         int permLength = 120;
@@ -256,7 +259,7 @@ public class ParallelComputingInstanceTest {
 
     @Test
     public void durstenfeldGroupSizeTest() {
-        ParallelComputingInstance instance = new ParallelComputingInstance();
+        ParallelComputingInstance instance = new ParallelComputingInstance(programName);
         instance.init();
         int permNumber = 53000;
         for (int permLength = 37; permLength < 39; permLength++) {
