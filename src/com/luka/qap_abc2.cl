@@ -15,13 +15,13 @@ inline int get2DFrom1D(const global int* array1D, int i, int j, int arraySize){
 }
 
 inline int getLocalIdInSerializedResult(int result){
-    return (result & 0xFF000000)>>24;
+    return result & 0x000000FF;
 }
 inline int getCostFunctionValueInSerializedResult(int result){
-    return result & 0x00FFFFFF;
+    return (result & 0xFFFFFF00)>>8;
 }
 inline int serializeIdAndCostFunctionValue(int id, int cost){
-    return (id<<24)|cost;
+    return (cost<<8)|id;
 }
 
 //copy from durstenfldAlgorithm
@@ -139,8 +139,11 @@ void onlookerBee(local int * foodSources, local int * costFunctionValues, local 
 
     *lastRand = rand2(*lastRand);
     i = *lastRand  % (problemSize);
-    *lastRand = rand2(*lastRand);
-    j =*lastRand % (problemSize);
+    do{
+        *lastRand = rand2(*lastRand);
+        j =*lastRand % (problemSize);
+    }while(i==j);
+
 
     int newCost = bestCostFunction;
     int iVal = foodSources[chosenFoodSource * problemSize + i];
@@ -151,54 +154,81 @@ void onlookerBee(local int * foodSources, local int * costFunctionValues, local 
         }
     }
 
-
-    //celowo 0 jako id, gdyż w tym kontekście nie ma on sensu
+    //celowo 0 jako id, gdyz w tym kontekscie nie ma on sensu
     tmpTab[localId] = serializeIdAndCostFunctionValue(0, costFunctionValues[localId]);
     int mySerialized = serializeIdAndCostFunctionValue(localId, newCost);
     barrier (CLK_LOCAL_MEM_FENCE);
-    while(newCost < getCostFunctionValueInSerializedResult(tmpTab[chosenFoodSource]) ){
-        //barrier (CLK_LOCAL_MEM_FENCE);
+
+    atomic_min (tmpTab+chosenFoodSource,mySerialized);
+    /*while(newCost < getCostFunctionValueInSerializedResult(tmpTab[chosenFoodSource]) ){
         tmpTab[chosenFoodSource] = mySerialized;
-    }
+        barrier (CLK_LOCAL_MEM_FENCE);
+    }*/
+
     barrier (CLK_LOCAL_MEM_FENCE);
 
-    //poniższy if/else wykonywany jest dla indeksów lokalnych przez co każdy indeks lokalny jest obsługiwany przez dokładnie jeden
-    //wątek a dzięki temu wyzerowanie lub ewentualna inkrementacja wystąpią tylko raz dla każdego elementu
-    //Aby zliczyć wszystkie próby, mozna ten if wykonać indeksów chosenFoodSource, które mogą się powtarzać. Wtedy należy jednak użyć funkcji atomic_add w przypadku inkrementacji
+    /*if(get_group_id(0) == 0){
+        printf((__constant char *)"      li:%d cs:%d chosen:%d newCost:%d bestForChosen:%d\n", localId, costFunctionValues[localId], chosenFoodSource, newCost,getCostFunctionValueInSerializedResult( tmpTab[chosenFoodSource]) );
+    }*/
+    /*ponizszy if/else wykonywany jest dla indeksow lokalnych przez co kazdy indeks lokalny jest obslugiwany przez dokladnie jeden
+     watek a dzieki temu wyzerowanie lub ewentualna inkrementacja wystapia tylko raz dla kazdego elementu
+     Aby zliczyc wszystkie proby, mozna ten if wykonac dla indeksow chosenFoodSource, ktore moga sie powtarzac. Wtedy nalezy jednak uzyc funkcji atomic_add w przypadku inkrementacji
+    */
     if( getCostFunctionValueInSerializedResult(tmpTab[localId]) <costFunctionValues[localId]){
         tries[localId]=0;
     }else{
         tries[localId]++;
     }
 
-    //Następny if jest już wykonywany w kontekście chosenFoodSource ponieważ będą używane zmienne z tego wątku: i,iVal,j,jVal
+    //Nastepny if jest już wykonywany w kontekscie chosenFoodSource poniewaz beda uzywane zmienne z tego watku: i,iVal,j,jVal
     if( getCostFunctionValueInSerializedResult(tmpTab[chosenFoodSource])< costFunctionValues[chosenFoodSource]
         && getLocalIdInSerializedResult(tmpTab[chosenFoodSource]) == localId){
         foodSources[chosenFoodSource * problemSize + i] = jVal;
         foodSources[chosenFoodSource * problemSize + j] = iVal;
         costFunctionValues[chosenFoodSource]=newCost; //inaczej getCostFunctionValueInSerializedResult(tmpTab[chosenFoodSource]
     }
+
+   /* if(get_group_id(0) == 0){
+        printf((__constant char *)"after li:%d cs:%d chosen:%d newCost:%d bestForChosen:%d\n", localId, costFunctionValues[localId], chosenFoodSource, newCost,getCostFunctionValueInSerializedResult( tmpTab[chosenFoodSource]) );
+    }*/
 }
 
-int lowerBound( local int * tab, int value){
-    return 0;
+int lowerBound( local int * tab, int tabSize, int value){
+    int l = 0;
+    int h = tabSize;
+    while (l < h) {
+        int mid = (l + h + 1) / 2;
+        if (value <= tab[mid]) {
+            h = mid-1;
+        } else {
+            l = mid ;
+        }
+    }
+    return l;
 }
 
-void originalSelection(local int * foodSources, local int * costFunctionValues , local int * tries ,const global int* weights, const global int* distances, int problemSize, ulong * lastRand, int onlookersNumberInGroup, local int* tmpTab){
+void originalSelection(local int * foodSources, local int * costFunctionValues , local int * tries ,const global int* weights, const global int* distances, int problemSize, ulong * lastRand, int onlookersNumberInGroup, local int* tmpTab, local int* fitnessTab){
     int localId = get_local_id(0);
-
-    prefixSum(costFunctionValues, tmpTab);
-    if(localId == 0){
+    fitnessTab[localId] = 10000000000/(1 + costFunctionValues[localId]*costFunctionValues[localId]*costFunctionValues[localId]);
+    //printf((__constant char *)"%d --> %d\n", costFunctionValues[localId], fitnessTab[localId]);
+    prefixSum(fitnessTab, tmpTab);
+    /*if(localId == 0){
         for(int i =0;i< get_local_size(0);i++){
             printf((__constant char *)"%d v=%d ps=%d\n", i,costFunctionValues[i],tmpTab[i]);
         }
-    }
+    }*/
     *lastRand = rand2(*lastRand);
 
-    int randValue = *lastRand  % (tmpTab[get_local_size(0)-1]);
+    int randValue = *lastRand  % (tmpTab[get_local_size(0)-1] + fitnessTab[get_local_size(0)-1]);
 
-    int chosenFoodSource = lowerBound(tmpTab,randValue );
+    int chosenFoodSource = lowerBound(tmpTab,get_local_size(0),randValue );
 
+    barrier(CLK_LOCAL_MEM_FENCE);
+    tmpTab[localId] = 0;
+    atomic_inc(tmpTab+chosenFoodSource);
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    //printf((__constant char *)"%d %d (%d) ->%d\n", localId, costFunctionValues[localId], fitnessTab[localId], tmpTab[localId] );
     onlookerBee(foodSources, costFunctionValues, tries,weights, distances,   chosenFoodSource, problemSize, lastRand, tmpTab);
 }
 
@@ -257,9 +287,11 @@ void scoutBees(local int * foodSources, local int * tries , int problemSize, ulo
 void updateLocalBestInLoop( local int* costFunctionValues, local int* bestIndicator){
     int localId = get_local_id(0);
     int serializedLocalCostFunctionValue = serializeIdAndCostFunctionValue(localId, costFunctionValues[localId]);
-    while(costFunctionValues[localId] < (*bestIndicator & 0x00FFFFFF)){
+
+    atomic_min(bestIndicator, costFunctionValues[localId]);
+    /*while(costFunctionValues[localId] < (*bestIndicator & 0x00FFFFFF)){
         *bestIndicator = serializedLocalCostFunctionValue;
-    }
+    }*/
 }
 
 void findBestReduction(local int* costFunctionValues, local int* tmpTab, local int* bestIndicator) {
@@ -283,7 +315,9 @@ void findBestReduction(local int* costFunctionValues, local int* tmpTab, local i
     }
 }
 
-kernel void wholeAlgorithmKernel(const global int* weights, const global int* distances, const int onlookersNumberInGroup, const int problemSize, const int maxIterations, const int maxTries,ulong hostSeed, global int * solutionBuffer, local int * foodSources, local int * costFunctionValues, local int * tries, local int * tmpTab,short useReductionToFindBest, short selectionMethod ) {
+kernel void wholeAlgorithmKernel(const global int* weights, const global int* distances, const int onlookersNumberInGroup, const int problemSize, const int maxIterations,
+    const int maxTries,ulong hostSeed, global int * solutionBuffer, local int * foodSources, local int * costFunctionValues, local int * tries, local int * tmpTab,short useReductionToFindBest, short selectionMethod, local int* fitnessTab ) {
+
     // get index into global data array
     int globalId = get_global_id(0);
     int localId = get_local_id(0);
@@ -310,7 +344,7 @@ kernel void wholeAlgorithmKernel(const global int* weights, const global int* di
             eliteSelection(foodSources,  costFunctionValues , tries , weights,  distances,  problemSize,  &lastRand, onlookersNumberInGroup, tmpTab);
             break;
         case 2: //ORIGINAL
-            originalSelection(foodSources,  costFunctionValues , tries , weights,  distances,  problemSize,  &lastRand, onlookersNumberInGroup, tmpTab);
+            originalSelection(foodSources,  costFunctionValues , tries , weights,  distances,  problemSize,  &lastRand, onlookersNumberInGroup, tmpTab, fitnessTab);
             break;
         case 3: //EMPLOYEE_BEE_VERSION
             employeeBees( foodSources,  costFunctionValues , tries , weights,  distances,  problemSize,  &lastRand);

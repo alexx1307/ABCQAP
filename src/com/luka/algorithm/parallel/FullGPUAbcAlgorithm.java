@@ -78,7 +78,7 @@ FullGPUAbcAlgorithm implements IAlgorithm {
         parallelComputingInstance = new ParallelComputingInstance(programName);
         parallelComputingInstance.init();
         this.seed = seed;
-        workGrupSize = 128;
+        workGrupSize = 256;
         // dividing with ceiling up
         workGroupsNumber =  (parameters.getFoodSourcesNumber() + workGrupSize - 1)/workGrupSize;
         initBuffers(workGroupsNumber);

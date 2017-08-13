@@ -5,6 +5,7 @@ import com.luka.Main;
 
 import java.io.IOException;
 import java.nio.IntBuffer;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static java.lang.Math.min;
@@ -42,6 +43,7 @@ public class ParallelComputingInstance {
     public void init() {
         this.context = CLContext.create();
         CLDevice[] devices = context.getDevices();
+        LOGGER.setLevel(Level.OFF);
         LOGGER.info("Available Devices " + devices.length + ":");
         for (CLDevice device : devices) {
             LOGGER.info("dev: " + device.getVendor() + ", " + device.toString());
@@ -234,9 +236,9 @@ public class ParallelComputingInstance {
 
     public int[] readBufferToArray(CLBuffer<IntBuffer> buffer) {
         CLEventList eventList = new CLEventList(1);
-        System.out.println("before read");
+        //System.out.println("before read");
         queue.putReadBuffer(buffer,true, eventList);
-        System.out.println("read status: "+eventList.getEvent(0).getStatus());
+        //System.out.println("read status: "+eventList.getEvent(0).getStatus());
         int[] result = new int[buffer.getBuffer().limit()];
         buffer.getBuffer().get(result);
         buffer.getBuffer().rewind();
@@ -360,6 +362,7 @@ public class ParallelComputingInstance {
         kernel.putNullArg(localWorkSize * 4); //localTab
         kernel.putArg(useReductionToFindBest);
         kernel.putArg(onlookerMethod);
+        kernel.putNullArg(localWorkSize * 4); //fitnessTab
         queue.put1DRangeKernel(kernel, 0, localWorkSize * workGroupsNumber, localWorkSize);
         ;
     }

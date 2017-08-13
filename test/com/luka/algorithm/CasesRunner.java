@@ -30,12 +30,12 @@ import static com.jogamp.opencl.CLMemory.Mem.WRITE_ONLY;
  */
 public class CasesRunner {
 
-    private long seed = 18;
+    private long seed = 20;
     Random random = new Random(seed);
-    private int maxIterationNumber = 1;
+    private int maxIterationNumber = 10000;
     private int onlookersNumber = 50;
-    private int foodSourcesNumber = 256;
-    private int foodSourcesTrialsLimit = 5;
+    private int foodSourcesNumber = 100000;
+    private int foodSourcesTrialsLimit = 50;
     private short useReductionToFindBest = 1;
 
     private int[][] weights = new int[][]{
@@ -63,13 +63,13 @@ public class CasesRunner {
         ESelectionMethod onlookerMethods[] = {ESelectionMethod.ELITE_SELECTION, ESelectionMethod.EMPLOYEE_BEE_VERSION, ESelectionMethod.ORIGINAL, ESelectionMethod.NONE};//{ESelectionMethod.EMPLOYEE_BEE_VERSION, ESelectionMethod.NONE,ESelectionMethod.ELITE_SELECTION};
 
         int parallelTries = 0;
-        int fullParallelTries = 1;
-        int normalTries = 0;
+        int fullParallelTries = 10;
+        int normalTries =10 ;
         for (int i = 0; i < fullParallelTries; i++) {
             IAlgorithm algorithm = new FullGPUAbcAlgorithm(params);
             algorithm.setProblem(problem);
             params.setUseReductionToFindBest((short)1);
-            params.setOnlookerMethod(ESelectionMethod.ELITE_SELECTION);
+            params.setOnlookerMethod(ESelectionMethod.ORIGINAL);
 
             Instant start = Instant.now();
             algorithm.init(321);
